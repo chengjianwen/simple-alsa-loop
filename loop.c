@@ -22,13 +22,10 @@
 #include <errno.h>
 #include <alsa/asoundlib.h>
 
-#define BUFSIZE (1024 * 4)
+#define BUFSIZE (1024 * 2)
 
-snd_pcm_t *playback_handle, *capture_handle;
-int buf[BUFSIZE * 2];
-
-static unsigned int rate = 192000;
-static unsigned int format = SND_PCM_FORMAT_S32_LE;
+static unsigned int rate = 16000;
+static unsigned int format = SND_PCM_FORMAT_S16_LE;
 
 static int open_stream(snd_pcm_t **handle, const char *name, int dir)
 {
@@ -73,7 +70,7 @@ static int open_stream(snd_pcm_t **handle, const char *name, int dir)
 		return err;
 	}
 
-	if ((err = snd_pcm_hw_params_set_channels(*handle, hw_params, 2)) < 0) {
+	if ((err = snd_pcm_hw_params_set_channels(*handle, hw_params, 1)) < 0) {
 		fprintf(stderr, "%s (%s): cannot set channel count(%s)\n",
 			name, dirname, snd_strerror(err));
 		return err;
@@ -102,7 +99,7 @@ static int open_stream(snd_pcm_t **handle, const char *name, int dir)
 			name, dirname, snd_strerror(err));
 		return err;
 	}
-	if ((err = snd_pcm_sw_params_set_start_threshold(*handle, sw_params, 0U)) < 0) {
+	if ((err = snd_pcm_sw_params_set_start_threshold(*handle, sw_params, 512)) < 0) {
 		fprintf(stderr, "%s (%s): cannot set start mode(%s)\n",
 			name, dirname, snd_strerror(err));
 		return err;
@@ -118,12 +115,15 @@ static int open_stream(snd_pcm_t **handle, const char *name, int dir)
   
 int main(int argc, char *argv[])
 {
+	snd_pcm_t *playback_handle, *capture_handle;
+	int buf[BUFSIZE];
+
 	int err;
 
-	if ((err = open_stream(&playback_handle, "default", SND_PCM_STREAM_PLAYBACK)) < 0)
+	if ((err = open_stream(&playback_handle, "hw:0,0", SND_PCM_STREAM_PLAYBACK)) < 0)
 		return err;
 
-	if ((err = open_stream(&capture_handle, "hw:0,1", SND_PCM_STREAM_CAPTURE)) < 0)
+	if ((err = open_stream(&capture_handle, "plughw:1,0", SND_PCM_STREAM_CAPTURE)) < 0)
 		return err;
 
 	if ((err = snd_pcm_prepare(playback_handle)) < 0) {
@@ -141,27 +141,30 @@ int main(int argc, char *argv[])
 	memset(buf, 0, sizeof(buf));
 
 	while (1) {
-		int avail;
+		int avail_capture, avail_playback;
 
 		if ((err = snd_pcm_wait(playback_handle, 1000)) < 0) {
-			fprintf(stderr, "poll failed(%s)\n", strerror(errno));
+			fprintf(stderr, "poll playback device failed(%s)\n", strerror(errno));
 			break;
 		}	           
 
-		avail = snd_pcm_avail_update(capture_handle);
-		if (avail > 0) {
-			if (avail > BUFSIZE)
-				avail = BUFSIZE;
+		avail_capture = snd_pcm_avail_update(capture_handle);
+		if (avail_capture > 0) {
+			if (avail_capture > BUFSIZE)
+				avail_capture = BUFSIZE;
 
-			snd_pcm_readi(capture_handle, buf, avail);
+			snd_pcm_readi(capture_handle, buf, avail_capture);
 		}
 
-		avail = snd_pcm_avail_update(playback_handle);
-		if (avail > 0) {
-			if (avail > BUFSIZE)
-				avail = BUFSIZE;
-
-			snd_pcm_writei(playback_handle, buf, avail);
+		avail_playback = snd_pcm_avail_update(playback_handle);
+		if (avail_playback > 0) {
+			if (avail_playback > BUFSIZE)
+				avail_playback = BUFSIZE;
+                        if (avail_playback > avail_capture)
+				avail_playback = avail_capture;
+                        if (avail_playback > 0) {
+			        snd_pcm_writei(playback_handle, buf, avail_playback);
+                        }
 		}
 	}
 
