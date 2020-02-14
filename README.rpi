@@ -1,0 +1,8 @@
+RPi has four low frequence cpus.
+I want to redirect the PCMs from an USB micphone to onboard audio out.
+rate: 16000
+channels: 1
+format: S16_LE
+threadhold: 512
+
+Now it can works. The only one problem seems only one: a 100% cpu.
